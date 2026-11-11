@@ -28,16 +28,13 @@ OctoFit Tracker is a three-tier application for a school fitness program. The st
 
 ## Implementation decisions
 
-Record your plan here before editing code.
-
-- Presentation tier decision:
-- Logic tier decision:
-- Data tier decision:
-- Activity tracking approach:
-- Team management approach:
-- Leaderboard approach:
-- Workout suggestions approach:
-
+- Presentation tier decision: Build the React app as a thin client over the `/api` contract. Each capability screen should fetch data through the shared API client and render loading, empty, success, and error states with accessible text, without owning business logic or persistence rules.
+- Logic tier decision: Keep Express routes slim and delegate behavior to TypeScript service functions. Route handlers validate request input, map malformed input to deliberate 4xx errors, and pass valid data to the service layer.
+- Data tier decision: Keep validation and persistence rules in Mongoose schemas and seed scripts. Use a stable seed process with upserts so demo records stay consistent without deleting user data, while reconciling previous team membership for seeded users.
+- Activity tracking approach: Store activities with valid `user`, `team`, `type`, `minutes`, and timestamps, compute a positive `points` value from minutes, and reject invalid or missing references with 4xx responses instead of Mongoose cast exceptions.
+- Team management approach: Validate required team data (`name`, `mascot`) and accept member arrays as ObjectIds. Expose team members in the list response and ensure the seed script preserves existing membership relationships when moving demo users.
+- Leaderboard approach: Aggregate activity points by team, sort by descending total, and assign 1-based ranks in the final API payload. The UI should render the ranked results without recalculating business rules.
+- Workout suggestions approach: Recommend workouts based on the user’s seeded email, recent activity type, and fitness goal. The first suggestion should match the inferred focus and carry a human-readable reason string that references the activity pattern.
 ## Test plan
 
 Record the commands you run and what each failure means.
