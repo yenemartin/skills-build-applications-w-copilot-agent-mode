@@ -88,20 +88,18 @@ export async function createTeam(input: unknown) {
 export async function getLeaderboard() {
   const grouped = await Activity.aggregate([
     { $group: { _id: '$team', totalPoints: { $sum: '$points' } } },
-    { $sort: { totalPoints: -1, _id: 1 } },
   ]);
 
-  if (grouped.length === 0) return [];
+  const totalsByTeam = new Map(grouped.map((entry) => [entry._id.toString(), Number(entry.totalPoints) || 0]));
+  const teams = await Team.find({}, { name: 1 }).sort({ name: 1 }).lean();
 
-  const teamIds = grouped.map((entry) => entry._id);
-  const teams = await Team.find({ _id: { $in: teamIds } }, { name: 1 }).lean();
-  const teamMap = new Map(teams.map((team) => [team._id.toString(), team.name]));
-
-  return grouped.map((entry, index) => ({
-    teamName: teamMap.get(entry._id.toString()) ?? 'Unknown team',
-    totalPoints: Number(entry.totalPoints) || 0,
-    rank: index + 1,
-  }));
+  return teams
+    .map((team) => ({
+      teamName: team.name,
+      totalPoints: totalsByTeam.get(team._id.toString()) ?? 0,
+    }))
+    .sort((left, right) => right.totalPoints - left.totalPoints || left.teamName.localeCompare(right.teamName))
+    .map((entry, index) => ({ ...entry, rank: index + 1 }));
 }
 
 export async function suggestWorkouts(userEmail: string) {
@@ -114,9 +112,22 @@ export async function suggestWorkouts(userEmail: string) {
 
   const recentActivities = await Activity.find({ user: user._id }).sort({ occurredAt: -1 }).limit(5).lean();
   const recentType = recentActivities[0]?.type ?? user.fitnessGoal ?? 'endurance';
-  const inferredFocus = (user.fitnessGoal ?? recentType).toLowerCase().includes('strength') || String(recentType).toLowerCase().includes('strength')
-    ? 'strength'
-    : 'endurance';
+  const focusFor = (value: string) => value.toLowerCase().includes('strength') ? 'strength' : 'endurance';
+  const goalFocus = focusFor(user.fitnessGoal ?? 'endurance');
+  const focusCounts = new Map<string, number>();
+  for (const activity of recentActivities) {
+    const focus = focusFor(activity.type);
+    focusCounts.set(focus, (focusCounts.get(focus) ?? 0) + 1);
+  }
+  const highestCount = Math.max(0, ...focusCounts.values());
+  const topActivityFocuses = [...focusCounts]
+    .filter(([, count]) => count === highestCount)
+    .map(([focus]) => focus);
+  const inferredFocus = topActivityFocuses.length === 0
+    ? goalFocus
+    : topActivityFocuses.includes(goalFocus)
+      ? goalFocus
+      : topActivityFocuses[0];
 
   const matchingWorkouts = await Workout.find({ focus: inferredFocus }).sort({ title: 1 }).lean();
   const candidates = matchingWorkouts.length > 0 ? matchingWorkouts : await Workout.find().sort({ title: 1 }).lean();
